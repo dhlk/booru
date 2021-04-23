@@ -80,10 +80,14 @@ func (b *Booru) indexStream(ctx context.Context, tag string) <-chan Post {
 var indexMutex sync.Mutex
 
 func (b *Booru) generateIndex(ctx context.Context, tag string) (err error) {
+	indexPath := b.indexPath(tag)
+	if indexExists(indexPath) {
+		return
+	}
+
 	indexMutex.Lock()
 	defer indexMutex.Unlock()
 
-	indexPath := b.indexPath(tag)
 	if indexExists(indexPath) {
 		return
 	}

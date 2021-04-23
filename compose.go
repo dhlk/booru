@@ -12,13 +12,27 @@ func drainTo(ctx context.Context, source <-chan Post, sink chan<- Post) {
 	}
 }
 
-func Skip(ctx context.Context, c <-chan Post, count int64) <-chan Post {
+type CancelableStream func(context.Context) <-chan Post
+
+func Skip(in CancelableStream, count int64) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return skip(ctx, in, count)
+	}
+}
+
+func skip(ctx context.Context, in CancelableStream, count int64) <-chan Post {
 	result := make(chan Post)
-	go func() {
+
+	go func(out chan<- Post) {
 		defer close(result)
 
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		input := in(fwdCtx)
+
 		read := int64(0)
-		for post := range c {
+		for post := range input {
 			read++
 			if read > count {
 				select {
@@ -30,22 +44,32 @@ func Skip(ctx context.Context, c <-chan Post, count int64) <-chan Post {
 			}
 		}
 
-		drainTo(ctx, c, result)
-	}()
+		drainTo(ctx, input, result)
+	}(result)
+
 	return result
 }
 
-func Limit(ctx context.Context, c <-chan Post, count int64) <-chan Post {
+func Limit(in CancelableStream, count int64) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return limit(ctx, in, count)
+	}
+}
+
+func limit(ctx context.Context, in CancelableStream, count int64) <-chan Post {
 	result := make(chan Post)
 
-	go func() {
+	go func(out chan<- Post) {
 		defer close(result)
 
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
 		wrote := int64(0)
-		for post := range c {
+		for post := range in(fwdCtx) {
 			wrote++
 			if wrote > count {
-				break
+				return
 			}
 			select {
 			case <-ctx.Done():
@@ -53,157 +77,204 @@ func Limit(ctx context.Context, c <-chan Post, count int64) <-chan Post {
 			case result <- post:
 			}
 		}
-	}()
+	}(result)
 
 	return result
 }
 
-// TODO and needs a subcontext to cancel feeds into it
-func and(ctx context.Context, l, r <-chan Post, compare func(Post, Post) int) <-chan Post {
+func Intersection(in []CancelableStream, compare PostCompare) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return intersection(ctx, in, compare)
+	}
+}
+
+func intersection(ctx context.Context, in []CancelableStream, compare PostCompare) <-chan Post {
+	if len(in) == 0 {
+		return nothing(ctx)
+	} else if len(in) == 1 {
+		return in[0](ctx)
+	}
+
 	result := make(chan Post)
-	go func() {
+
+	go func(out chan<- Post) {
 		defer close(result)
 
-		lr, lok := <-l
-		rr, rok := <-r
-		for lok && rok {
-			order := compare(lr, rr)
-			if order == 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case result <- lr:
-					lr, lok = <-l
-					rr, rok = <-r
-				}
-			} else if order == -1 {
-				lr, lok = <-l
-			} else if order == 1 {
-				rr, rok = <-r
-			}
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		inputs := make([]<-chan Post, len(in))
+		post := make([]Post, len(in))
+		ok := make([]bool, len(in))
+
+		for i := range inputs {
+			inputs[i] = in[i](fwdCtx)
 		}
-	}()
-	return result
-}
 
-func And(ctx context.Context, q ...<-chan Post) <-chan Post {
-	if len(q) == 0 {
-		panic(q)
-	}
-
-	if len(q) == 1 {
-		return q[0]
-	}
-
-	result := and(ctx, q[0], q[1], ComparePostDescending)
-	for _, qr := range q[2:] {
-		result = and(ctx, result, qr, ComparePostDescending)
-	}
-	return result
-}
-
-func or(ctx context.Context, l, r <-chan Post, compare func(Post, Post) int) <-chan Post {
-	result := make(chan Post)
-	go func() {
-		defer close(result)
-
-		lr, lok := <-l
-		rr, rok := <-r
-		for lok && rok {
-			order := compare(lr, rr)
-			if order == 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case result <- lr:
-					lr, lok = <-l
-					rr, rok = <-r
-				}
-			} else if order == -1 {
-				select {
-				case <-ctx.Done():
-					return
-				case result <- lr:
-					lr, lok = <-l
-				}
-			} else if order == 1 {
-				select {
-				case <-ctx.Done():
-					return
-				case result <- rr:
-					rr, rok = <-r
-				}
+		for i := range inputs {
+			post[i], ok[i] = <-inputs[i]
+			if !ok[i] {
+				return
 			}
 		}
 
-		if lok {
+		for {
+			for i := range inputs {
+				if i+1 == len(inputs) {
+					select {
+					case <-ctx.Done():
+						return
+					case out <- post[0]:
+						post[0], ok[0] = <-inputs[0]
+					}
+					break
+				}
+
+				order := compare(post[i], post[i+1])
+				if order == 0 {
+					continue
+				} else if order == -1 {
+					post[i], ok[i] = <-inputs[i]
+					if !ok[i] {
+						return
+					}
+					break
+				} else if order == 1 {
+					post[i+1], ok[i+1] = <-inputs[i+1]
+					if !ok[i+1] {
+						return
+					}
+					break
+				}
+			}
+		}
+	}(result)
+
+	return result
+}
+
+func Union(in []CancelableStream, compare PostCompare) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return union(ctx, in, compare)
+	}
+}
+
+func union(ctx context.Context, in []CancelableStream, compare PostCompare) <-chan Post {
+	if len(in) == 0 {
+		return nothing(ctx)
+	} else if len(in) == 1 {
+		return in[0](ctx)
+	}
+
+	result := make(chan Post)
+
+	go func(out chan<- Post) {
+		defer close(result)
+
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		inputs := make([]<-chan Post, len(in))
+		post := make([]Post, len(in))
+		ok := make([]bool, len(in))
+
+		for i := range inputs {
+			inputs[i] = in[i](fwdCtx)
+		}
+
+		for i := range inputs {
+			post[i], ok[i] = <-inputs[i]
+		}
+
+		for {
+			min := -1
+
+			for i, iok := range ok {
+				if iok {
+					min = i
+					break
+				}
+			}
+
+			if min == -1 {
+				return
+			}
+
+			for i := range inputs {
+				if !ok[i] || i == min {
+					continue
+				}
+
+				order := compare(post[min], post[i])
+				if order == 0 {
+					post[i], ok[i] = <-inputs[i]
+				} else if order == -1 {
+					continue
+				} else if order == 1 {
+					min = i
+				}
+			}
+
 			select {
 			case <-ctx.Done():
 				return
-			case result <- lr:
-				drainTo(ctx, l, result)
+			case out <- post[min]:
+				post[min], ok[min] = <-inputs[min]
 			}
 		}
-		if rok {
-			select {
-			case <-ctx.Done():
-				return
-			case result <- rr:
-				drainTo(ctx, r, result)
-			}
-		}
-	}()
+	}(result)
+
 	return result
 }
 
-func Or(ctx context.Context, q ...<-chan Post) <-chan Post {
-	if len(q) == 0 {
-		panic(q)
+// assumes in is a strict subset of space!
+func Complement(in, space CancelableStream, compare PostCompare) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return complement(ctx, in, space, compare)
 	}
-
-	if len(q) == 1 {
-		return q[0]
-	}
-
-	result := or(ctx, q[0], q[1], ComparePostDescending)
-	for _, qr := range q[2:] {
-		result = or(ctx, result, qr, ComparePostDescending)
-	}
-	return result
 }
 
-func Not(ctx context.Context, query, everything <-chan Post, compare func(Post, Post) int) <-chan Post {
+func complement(ctx context.Context, in, postSpace CancelableStream, compare PostCompare) <-chan Post {
 	result := make(chan Post)
-	go func() {
+
+	go func(out chan<- Post) {
 		defer close(result)
 
-		qr, qok := <-query
-		er, eok := <-everything
-		for qok {
-			order := compare(qr, er)
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		input := in(fwdCtx)
+		space := postSpace(fwdCtx)
+
+		iv, iok := <-input
+		sv, sok := <-space
+
+		for iok {
+			order := compare(iv, sv)
 			if order == 0 {
-				qr, qok = <-query
-				er, eok = <-everything
+				iv, iok = <-input
+				sv, sok = <-space
 			} else if order == -1 {
-				qr, qok = <-query
+				iv, iok = <-input
 			} else if order == 1 {
 				select {
 				case <-ctx.Done():
 					return
-				case result <- er:
-					er, eok = <-everything
+				case out <- sv:
+					sv, sok = <-space
 				}
 			}
 		}
 
-		if eok {
+		if sok {
 			select {
 			case <-ctx.Done():
 				return
-			case result <- er:
-				drainTo(ctx, everything, result)
+			case out <- sv:
+				drainTo(ctx, space, out)
 			}
 		}
-	}()
+	}(result)
+
 	return result
 }

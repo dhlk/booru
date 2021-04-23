@@ -57,6 +57,8 @@ type Post struct {
 }
 
 // semantics like strings.Compare
+type PostCompare func(Post, Post) int
+
 func ComparePostAscending(a, b Post) int {
 	if a.ID == b.ID {
 		return 0

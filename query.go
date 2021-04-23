@@ -11,13 +11,15 @@ import (
 	"github.com/dhlk/booru/parse"
 )
 
-var nothing <-chan Post = func() <-chan Post {
+var nothing CancelableStream = func(context.Context) <-chan Post {
 	c := make(chan Post)
 	close(c)
 	return c
-}()
+}
 
-func (b *Booru) query(ctx context.Context, query string) (result <-chan Post, err error) {
+var compare = ComparePostDescending
+
+func (b *Booru) query(query string) (result CancelableStream, err error) {
 	// parse the query
 	var tree *parse.Tree
 	if tree, err = parse.Parse(query); err != nil {
@@ -25,7 +27,7 @@ func (b *Booru) query(ctx context.Context, query string) (result <-chan Post, er
 		return
 	}
 
-	result = b.queryForNode(ctx, tree.Root)
+	result = b.queryForNode(tree.Root)
 	return
 }
 
@@ -33,11 +35,11 @@ func (b *Booru) Query(ctx context.Context, query string, page, length int64) (po
 	fwdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var results <-chan Post
-	if results, err = b.query(fwdCtx, query); err != nil {
+	var results CancelableStream
+	if results, err = b.query(query); err != nil {
 		return
 	}
-	selection := Limit(fwdCtx, Skip(fwdCtx, results, page*length), length)
+	selection := Limit(Skip(results, page*length), length)(fwdCtx)
 
 	// open the transaction and add tag data
 	var transaction *sql.Tx
@@ -59,45 +61,45 @@ func (b *Booru) Query(ctx context.Context, query string, page, length int64) (po
 	return
 }
 
-func (b *Booru) queryForNode(ctx context.Context, node parse.Node) <-chan Post {
+func (b *Booru) queryForNode(node parse.Node) CancelableStream {
 	switch node.Type() {
 	case parse.NodeCond:
-		return b.queryConditionalNode(ctx, node.(*parse.CondNode))
+		return b.queryConditionalNode(node.(*parse.CondNode))
 	case parse.NodeLess:
-		return b.queryLessNode(ctx, node.(*parse.LessNode))
+		return b.queryLessNode(node.(*parse.LessNode))
 	case parse.NodeWord:
-		return b.queryWordNode(ctx, node.(*parse.WordNode))
+		return b.queryWordNode(node.(*parse.WordNode))
 	}
 
 	// should be unreachable
 	panic(nil)
 }
 
-func (b *Booru) queryConditionalNode(ctx context.Context, cond *parse.CondNode) <-chan Post {
-	orArr := make([]<-chan Post, len(cond.Or))
+func (b *Booru) queryConditionalNode(cond *parse.CondNode) CancelableStream {
+	orArr := make([]CancelableStream, len(cond.Or))
 	for i, or := range cond.Or {
-		orArr[i] = b.queryForNode(ctx, or)
+		orArr[i] = b.queryForNode(or)
 	}
 
-	andArr := make([]<-chan Post, len(cond.And))
+	andArr := make([]CancelableStream, len(cond.And))
 	for i, and := range cond.And {
-		andArr[i] = b.queryForNode(ctx, and)
+		andArr[i] = b.queryForNode(and)
 	}
 	if len(orArr) > 0 {
-		andArr = append(andArr, Or(ctx, orArr...))
+		andArr = append(andArr, Union(orArr, compare))
 	}
 
 	if len(andArr) == 0 {
-		return b.queryEveryPost(ctx)
+		return b.queryEveryPost()
 	}
-	return And(ctx, andArr...)
+	return Intersection(andArr, compare)
 }
 
-func (b *Booru) queryLessNode(ctx context.Context, less *parse.LessNode) <-chan Post {
-	return Not(ctx, b.queryForNode(ctx, less.Less), b.queryEveryPost(ctx), ComparePostDescending)
+func (b *Booru) queryLessNode(less *parse.LessNode) CancelableStream {
+	return Complement(b.queryForNode(less.Less), b.queryEveryPost(), compare)
 }
 
-func (b *Booru) queryWordNode(ctx context.Context, word *parse.WordNode) <-chan Post {
+func (b *Booru) queryWordNode(word *parse.WordNode) CancelableStream {
 	tag := string(word.Word)
 
 	// load baseline subquery
@@ -109,7 +111,7 @@ func (b *Booru) queryWordNode(ctx context.Context, word *parse.WordNode) <-chan 
 			return nothing
 		}
 
-		result, err := b.query(ctx, string(query))
+		result, err := b.query(string(query))
 		if err != nil {
 			log.Printf("%v", err)
 			return nothing
@@ -119,19 +121,19 @@ func (b *Booru) queryWordNode(ctx context.Context, word *parse.WordNode) <-chan 
 
 	// load regex subquery
 	if strings.HasPrefix(tag, "regex:") {
-		if err := b.GenerateTagIndex(ctx); err != nil {
+		if err := b.GenerateTagIndex(context.TODO()); err != nil {
 			log.Printf("%v", err)
 			return nothing
 		}
 
 		regex := strings.Replace(tag, "regex:", "", -1)
-		query, err := b.generateTagQuery(ctx, regex)
+		query, err := b.generateTagQuery(context.TODO(), regex)
 		if err != nil {
 			log.Printf("%v", err)
 			return nothing
 		}
 
-		result, err := b.query(ctx, string(query))
+		result, err := b.query(string(query))
 		if err != nil {
 			log.Printf("%v", err)
 			return nothing
@@ -139,9 +141,9 @@ func (b *Booru) queryWordNode(ctx context.Context, word *parse.WordNode) <-chan 
 		return result
 	}
 
-	return b.indexStream(ctx, string(word.Word))
+	return b.indexStreamCancelable(string(word.Word))
 }
 
-func (b *Booru) queryEveryPost(ctx context.Context) <-chan Post {
-	return b.indexStream(ctx, globalIndexTag)
+func (b *Booru) queryEveryPost() CancelableStream {
+	return b.indexStreamCancelable(globalIndexTag)
 }

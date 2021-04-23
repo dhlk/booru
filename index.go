@@ -34,8 +34,15 @@ func indexExists(path string) bool {
 	return !os.IsNotExist(err)
 }
 
+func (b *Booru) indexStreamCancelable(tag string) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return b.indexStream(ctx, tag)
+	}
+}
+
 func (b *Booru) indexStream(ctx context.Context, tag string) <-chan Post {
 	resultFull := make(chan Post)
+
 	go func(result chan<- Post) {
 		defer close(resultFull)
 

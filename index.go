@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 )
 
 // TODO removal of failed index generation should probably be some kind of recovery
@@ -76,7 +77,12 @@ func (b *Booru) indexStream(ctx context.Context, tag string) <-chan Post {
 	return resultFull
 }
 
+var indexMutex sync.Mutex
+
 func (b *Booru) generateIndex(ctx context.Context, tag string) (err error) {
+	indexMutex.Lock()
+	defer indexMutex.Unlock()
+
 	indexPath := b.indexPath(tag)
 	if indexExists(indexPath) {
 		return

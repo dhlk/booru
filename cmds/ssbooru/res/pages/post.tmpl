@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>{{.Base.Title}} | post | {{.Post.Tags}}</title>
+{{template "styles.tmpl" .Base}}
+	</head>
+	<body>
+		<header>
+			<a href="/">{{.Base.Title}}</a> | post | {{.Post.ID}} | {{.Post.Post}}
+		</header>
+		<nav>
+			<form method="get" action="/search">
+				<label>
+					Search:
+					<input type="text" name="query">
+				</label>
+			</form>
+{{if ne .Post.ID 0}}			<form method="get" action="/post">
+				<input type="hidden" name="id" value="{{.Post.ID}}">
+				<label>
+					Add a Tag:
+					<input type="text" name="tag">
+				</label>
+			</form>
+			Tags:<br>
+{{range .Post.Tags}}
+			<div class="left">
+				<a href="/search?query={{.Tag}}">{{.Tag}}</a>
+			</div>
+			<a class="right" href="/post?id={{$.Post.ID}}&untag={{.Tag}}">[X]</a>
+			<br>
+{{end}}
+{{end}}
+		</nav>
+		<p>{{.Post.Time}}</p>
+{{if ne .Post.ID 0}}		<a href="/resource?id={{.Post.ID}}">
+			<embed src="/resource?id={{.Post.ID}}">
+		</a>
+{{end}}
+	</body>
+</html>

@@ -1,0 +1,53 @@
+header {
+	display: block;
+}
+
+nav {
+	display: block;
+	float: left;
+	padding: 8px;
+	min-width: 256px;
+}
+
+body {
+	font: Arial;
+	font-size: 16px;
+	background: #111111;
+	color: white;
+	white-space: nowrap;
+}
+
+a {
+	text-decoration: none;
+	color: #A0B0E0;
+}
+
+li.preview {
+	border-style: double;
+	display: inline;
+	height: 186px;
+	width: 186px;
+	list-style: none;
+	float: left;
+	overflow: hidden;
+	outline: 1px;
+}
+
+embed {
+	max-height: 800px;
+	max-width: 1400px;
+}
+
+img.preview {
+	/*max-height: 100%;*/
+	max-width: 100%;
+	display: block;
+}
+
+.left {
+	float: left;
+}
+
+.right {
+	float: right;
+}

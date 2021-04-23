@@ -1,0 +1,46 @@
+{{if .M3u}}#EXTM3U
+{{range .Posts}}#EXTINF:0,{{.Tags}}
+./resource?id={{.ID}}
+{{end}}{{if gt .Next -1}}#EXTINF:0,next page
+./search?m3u&query={{.Query}}&page={{.Next}}&length={{.Length}}
+{{end}}
+{{else}}
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>{{.Base.Title}} | query | {{.Query}}</title>
+{{template "styles.tmpl" .Base}}
+	</head>
+	<body>
+		<header>
+			<a href="/">{{.Base.Title}}</a> | query | {{.Query}}
+		</header>
+		<nav>
+			<form method="get" action="/search">
+				<label>
+					Search:
+					<input type="text" name="query" value="{{.Query}}">
+				</label>
+			</form>
+			<a href="/search?{{if not .Direct}}direct&{{end}}query={{.Query}}">{{if .Direct}}in{{end}}direct</a>
+			<a href="/search?m3u&query={{.Query}}">m3u</a>
+{{if ne (len .Tags) 0}}			Tags:<br>
+{{range .Tags}}			<a href="/search?query={{.Tag}}">{{.Tag}}</a><br>
+{{end}}{{end}}
+		</nav>
+		<p>
+{{if gt .Prev -1}}			<a href="/search?query={{.Query}}&page={{.Prev}}&length={{.Length}}{{if $.Direct}}&direct{{end}}">&lt;&lt; Prev </a>
+{{end}}
+{{if gt .Next -1}}			<a href="/search?query={{.Query}}&page={{.Next}}&length={{.Length}}{{if $.Direct}}&direct{{end}}"> Next &gt;&gt;</a>
+{{end}}
+		</p>
+{{if eq (len .Posts) 0}}
+		<p>No results.</p>
+{{else}}		<ul>
+{{range .Posts}}			<a href="/{{if $.Direct}}resource{{else}}post{{end}}?id={{.ID}}">
+				<li class="preview"><img class="preview" src="/resource?id={{.ID}}" alt="{{.Tags}}"></li>
+{{end}}		</ul>
+{{end}}
+	</body>
+</html>
+{{end}}

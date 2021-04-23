@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>{{.Base.Title}} | error | {{.Error}}</title>
+{{template "styles.tmpl" .Base}}
+	</head>
+	<body>
+		<header>
+			<a href="/">{{.Base.Title}}</a> | error | {{.Error}}
+		</header>
+		<nav>
+			<form method="get" action="/search">
+				<label>
+					Search:
+					<input type="text" name="query" value="">
+				</label>
+			</form>
+		<p>{{.Error}}</p>
+	</body>
+</html>

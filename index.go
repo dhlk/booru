@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -75,6 +77,79 @@ func (b *Booru) indexStream(ctx context.Context, tag string) <-chan Post {
 	}(resultFull)
 
 	return resultFull
+}
+
+var indexBaselineMutex sync.Mutex
+
+func (b *Booru) indexBaseline(ctx context.Context, tag string) bool {
+	baseline := strings.Replace(tag, "baseline:", "", -1)
+	baselinePath := filepath.Join(b.baseline, baseline)
+	baselineIndex := b.indexPath(tag)
+
+	if !indexExists(baselinePath) {
+		if indexExists(baselineIndex) {
+			os.Remove(baselineIndex)
+		}
+		return false
+	}
+
+	if indexExists(baselineIndex) {
+		pathStat, _ := os.Lstat(baselinePath)
+		indexStat, _ := os.Lstat(baselineIndex)
+
+		if indexStat.ModTime().After(pathStat.ModTime()) {
+			return true
+		}
+	}
+
+	indexBaselineMutex.Lock()
+	defer indexBaselineMutex.Unlock()
+
+	if !indexExists(baselinePath) {
+		if indexExists(baselineIndex) {
+			os.Remove(baselineIndex)
+		}
+		return false
+	}
+
+	if indexExists(baselineIndex) {
+		pathStat, _ := os.Lstat(baselinePath)
+		indexStat, _ := os.Lstat(baselineIndex)
+
+		if indexStat.ModTime().After(pathStat.ModTime()) {
+			return true
+		}
+	}
+
+	query, err := ioutil.ReadFile(baselinePath)
+	if err != nil {
+		log.Printf("%v", err)
+		return false
+	}
+
+	result, err := b.query(string(query))
+	if err != nil {
+		log.Printf("%v", err)
+		return false
+	}
+
+	var index *os.File
+	if index, err = os.Create(baselineIndex); err != nil {
+		return false
+	}
+	defer index.Close()
+
+	encoder := json.NewEncoder(index)
+
+	for post := range result(ctx) {
+		if err := encoder.Encode(post); err != nil {
+			index.Close()
+			os.Remove(baselineIndex)
+			return false
+		}
+	}
+
+	return true
 }
 
 var indexMutex sync.Mutex

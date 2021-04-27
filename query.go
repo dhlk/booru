@@ -3,7 +3,9 @@ package booru
 import (
 	"context"
 	"database/sql"
+	"io/ioutil"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/dhlk/booru/parse"
@@ -102,12 +104,19 @@ func (b *Booru) queryWordNode(word *parse.WordNode) CancelableStream {
 
 	// load baseline subquery
 	if strings.HasPrefix(tag, "baseline:") {
-		return func(ctx context.Context) <-chan Post {
-			if b.indexBaseline(ctx, tag) {
-				return b.indexStreamCancelable(tag)(ctx)
-			}
-			return nothing(ctx)
+		baseline := strings.Replace(tag, "baseline:", "", -1)
+		query, err := ioutil.ReadFile(filepath.Join(b.baseline, baseline))
+		if err != nil {
+			log.Printf("%v", err)
+			return nothing
 		}
+
+		result, err := b.query(string(query))
+		if err != nil {
+			log.Printf("%v", err)
+			return nothing
+		}
+		return result
 	}
 
 	// load regex subquery

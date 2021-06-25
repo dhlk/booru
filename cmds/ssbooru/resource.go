@@ -1,25 +1,11 @@
 package main
 
-import (
-	"net/http"
-	"strconv"
-)
+import "net/http"
 
 func resourceHandler(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 
-	if req.Form["id"] == nil || len(req.Form["id"]) != 1 {
-		errorHandler(w, req, errorBadID)
-		return
-	}
-
-	id, err := strconv.ParseInt(req.Form["id"][0], 10, 64)
-	if err != nil {
-		errorHandler(w, req, err)
-		return
-	}
-
-	p, err := bru.GetPost(req.Context(), id)
+	p, err := bru.GetPost(req.Context(), req.URL.Path)
 	if err != nil {
 		errorHandler(w, req, err)
 		return

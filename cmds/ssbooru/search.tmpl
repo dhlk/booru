@@ -1,6 +1,6 @@
 {{if .M3u}}#EXTM3U
 {{range .Posts}}#EXTINF:0,{{.Tags}}
-./resource?id={{.ID}}
+./resource/{{.Post}}
 {{end}}{{if gt .Next -1}}#EXTINF:0,next page
 ./search?m3u&query={{.Query}}&page={{.Next}}&length={{.Length}}
 {{end}}
@@ -37,8 +37,8 @@
 {{if eq (len .Posts) 0}}
 		<p>No results.</p>
 {{else}}		<ul>
-{{range .Posts}}			<a href="/{{if $.Direct}}resource{{else}}post{{end}}?id={{.ID}}">
-				<li class="preview"><img class="preview" src="/resource?id={{.ID}}" alt="{{.Tags}}"></li>
+{{range .Posts}}			<a href="/{{if $.Direct}}resource{{else}}post{{end}}/{{.Post}}">
+				<li class="preview"><img class="preview" src="/resource/{{.Post}}" alt="{{.Tags}}"></li>
 {{end}}		</ul>
 {{end}}
 	</body>

@@ -10,7 +10,7 @@ import (
 
 // database statements
 const (
-	StatementQueryPost     = "select id, timestamp, post from posts where id = ?"
+	StatementQueryPost     = "select id, timestamp, post from posts where post = ?"
 	StatementQueryPostTags = "select tags.id, tags.tag from relations join tags on relations.tag = tags.id where relations.post = ?"
 )
 
@@ -115,7 +115,7 @@ func (b *Booru) GetPostTags(ctx context.Context, transaction *sql.Tx, id int64) 
 	return
 }
 
-func (b *Booru) GetPost(ctx context.Context, id int64) (post Post, err error) {
+func (b *Booru) GetPost(ctx context.Context, resource string) (post Post, err error) {
 	var transaction *sql.Tx
 	transaction, err = b.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -123,16 +123,14 @@ func (b *Booru) GetPost(ctx context.Context, id int64) (post Post, err error) {
 	}
 	defer transaction.Rollback()
 
-	if err = b.validatePostID(ctx, transaction, id); err != nil {
+	// get the post itself
+	var row *sql.Row
+	row = transaction.QueryRowContext(ctx, StatementQueryPost, resource)
+	if err = row.Scan(&post.ID, &post.Time, &post.Post); err != nil {
 		return
 	}
 
-	// get the post itself
-	var row *sql.Row
-	row = transaction.QueryRowContext(ctx, StatementQueryPost, id)
-	row.Scan(&post.ID, &post.Time, &post.Post)
-
-	if post.Tags, err = b.GetPostTags(ctx, transaction, id); err != nil {
+	if post.Tags, err = b.GetPostTags(ctx, transaction, post.ID); err != nil {
 		return
 	}
 

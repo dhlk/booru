@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"flag"
 	"html/template"
 	"net/http"
@@ -9,6 +10,12 @@ import (
 	"github.com/dhlk/booru"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+//go:embed *.tmpl
+var templatesFS embed.FS
+
+//go:embed *.css
+var stylesFS embed.FS
 
 var (
 	templates *template.Template
@@ -18,8 +25,6 @@ var (
 
 	address  = flag.String("address", "localhost:8085", "address to listen on")
 	dbpath   = flag.String("db", "booru.db", "sqlite3 database")
-	stpath   = flag.String("styles", "./styles", "sqlite3 database")
-	tmglob   = flag.String("tmpl", "./pages/*.tmpl", "template glob")
 	index    = flag.String("index", "index", "index directory")
 	baseline = flag.String("baseline", "baseline", "baseline directory")
 )
@@ -28,7 +33,7 @@ func main() {
 	flag.Parse()
 
 	var err error
-	templates, err = template.ParseGlob(*tmglob)
+	templates, err = template.ParseFS(templatesFS, "*.tmpl")
 	if err != nil {
 		panic(err)
 	}
@@ -41,11 +46,11 @@ func main() {
 
 	bru = booru.New(db, *index, *baseline)
 
-	http.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.Dir(*stpath))))
-	http.HandleFunc("/post", postHandler)
-	http.HandleFunc("/search", searchHandler)
-	http.HandleFunc("/resource", resourceHandler)
+	http.Handle("/post/", http.StripPrefix("/post/", http.HandlerFunc(postHandler)))
+	http.Handle("/resource/", http.StripPrefix("/resource/", http.HandlerFunc(resourceHandler)))
+	http.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.FS(stylesFS))))
 	http.HandleFunc("/index", indexHandler)
+	http.HandleFunc("/search", searchHandler)
 
 	panic(http.ListenAndServe(*address, nil))
 }

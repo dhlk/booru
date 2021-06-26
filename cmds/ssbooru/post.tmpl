@@ -25,8 +25,8 @@
 {{end}}
 		</nav>
 		<p>{{.Post.Time}}</p>
-{{if ne .Post.ID 0}}		<a href="/resource/{{.Post.Post}}">
-			<embed src="/resource/{{.Post.Post}}">
+{{if ne .Post.ID 0}}		<a href="http://localhost:7441/{{.Post.Post}}">
+			<embed src="http://localhost:7441/{{.Post.Post}}">
 		</a>
 {{end}}
 	</body>

@@ -1,6 +1,9 @@
 package booru
 
-import "context"
+import (
+	"context"
+	"math/rand"
+)
 
 func drainTo(ctx context.Context, source <-chan Post, sink chan<- Post) {
 	for post := range source {
@@ -75,6 +78,41 @@ func limit(ctx context.Context, in CancelableStream, count int64) <-chan Post {
 			case <-ctx.Done():
 				return
 			case result <- post:
+			}
+		}
+	}(result)
+
+	return result
+}
+
+func Random(in CancelableStream, rate float64) CancelableStream {
+	return func(ctx context.Context) <-chan Post {
+		return random(ctx, in, rate)
+	}
+}
+
+func random(ctx context.Context, in CancelableStream, rate float64) <-chan Post {
+	result := make(chan Post)
+
+	go func(out chan<- Post) {
+		defer close(result)
+
+		fwdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		for post := range in(fwdCtx) {
+			if rand.Float64() < rate {
+				select {
+				case <-ctx.Done():
+					return
+				case result <- post:
+				}
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 			}
 		}
 	}(result)

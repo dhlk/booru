@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dhlk/booru/parse"
@@ -139,6 +140,18 @@ func (b *Booru) queryWordNode(word *parse.WordNode) CancelableStream {
 			return nothing
 		}
 		return result
+	}
+
+	// load random subquery
+	if strings.HasPrefix(tag, "random:") {
+		rate := strings.Replace(tag, "random:", "", -1)
+		r, err := strconv.ParseFloat(rate, 64)
+		if err != nil {
+			log.Printf("%v", err)
+			return nothing
+		}
+
+		return Random(b.queryEveryPost(), r)
 	}
 
 	return b.indexStreamCancelable(string(word.Word))

@@ -62,6 +62,23 @@ func (b *Booru) Query(ctx context.Context, query string, page, length int64) (po
 	return
 }
 
+func (b *Booru) Count(ctx context.Context, query string) (count int64, err error) {
+	fwdCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	count = 0
+
+	var results CancelableStream
+	if results, err = b.query(query); err != nil {
+		return
+	}
+
+	for range results(fwdCtx) {
+		count++
+	}
+
+	return
+}
+
 func (b *Booru) queryForNode(node parse.Node) CancelableStream {
 	switch node.Type() {
 	case parse.NodeCond:

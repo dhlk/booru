@@ -51,6 +51,7 @@ func main() {
 	http.Handle("/styles/", http.StripPrefix("/styles/", http.FileServer(http.FS(stylesFS))))
 	http.HandleFunc("/index", indexHandler)
 	http.HandleFunc("/search", searchHandler)
+	http.HandleFunc("/length", lengthHandler)
 
 	panic(http.ListenAndServe(*address, nil))
 }

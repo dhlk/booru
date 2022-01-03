@@ -25,5 +25,5 @@ func lengthHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/json")
-	fmt.Fprintf(w, "%d", length)
+	fmt.Fprintf(w, "%d\n", length)
 }

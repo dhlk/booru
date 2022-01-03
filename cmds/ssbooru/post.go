@@ -22,8 +22,16 @@ func postHandler(w http.ResponseWriter, req *http.Request) {
 
 	p, err := bru.GetPost(req.Context(), req.URL.Path)
 	if err != nil {
-		errorHandler(w, req, err)
-		return
+		p = booru.Post{
+			ID:   -1,
+			Post: req.URL.Path,
+			Tags: []booru.Tag{
+				{Tag: "not in db"},
+				{Tag: err.Error()},
+			},
+		}
+		//errorHandler(w, req, err)
+		//return
 	}
 
 	post := PostPage{
